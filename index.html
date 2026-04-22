@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Power Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:        #080c14;
+      --surface:   #0d1626;
+      --border:    #1a2f4a;
+      --accent:    #00c8ff;
+      --accent2:   #ff5f1f;
+      --safe:      #00e676;
+      --danger:    #ff1744;
+      --text:      #cfe8ff;
+      --muted:     #4a7fa0;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Barlow Condensed', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 48px;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,200,255,0.015) 2px,
+        rgba(0,200,255,0.015) 4px
+      );
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header {
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 36px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 14px;
+      position: relative;
+      z-index: 1;
+    }
+
+    header h1 {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 1.1rem;
+      letter-spacing: 0.22em;
+      color: var(--accent);
+      text-shadow: 0 0 18px rgba(0,200,255,0.45);
+      text-transform: uppercase;
+    }
+
+    .demo-badge {
+      background: rgba(255,95,31,0.15);
+      border: 1px solid rgba(255,95,31,0.4);
+      color: var(--accent2);
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      padding: 3px 8px;
+      border-radius: 2px;
+      text-transform: uppercase;
+    }
+
+    #live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    #live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--safe);
+      box-shadow: 0 0 6px var(--safe);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    main {
+      width: 100%;
+      max-width: 640px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    @media (max-width: 480px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+      .card.power { grid-column: span 2; }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: 2px solid var(--accent);
+      border-radius: 4px;
+      padding: 22px 16px 18px;
+      text-align: center;
+      transition: box-shadow 0.3s;
+    }
+
+    .card:hover {
+      box-shadow: 0 0 22px rgba(0,200,255,0.07);
+    }
+
+    .card .label {
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .card .value {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 2.2rem;
+      color: var(--text);
+      line-height: 1;
+      transition: color 0.3s;
+    }
+
+    .card .value.danger { color: var(--danger); }
+
+    .card .unit {
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-top: 8px;
+      text-transform: uppercase;
+    }
+
+    #status-bar {
+      padding: 16px 24px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.85rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+      transition: background 0.4s, border-color 0.4s;
+    }
+
+    #status-bar.normal {
+      background: rgba(0,230,118,0.06);
+      border: 1px solid rgba(0,230,118,0.25);
+      color: var(--safe);
+    }
+
+    #status-bar.alert {
+      background: rgba(255,23,68,0.10);
+      border: 1px solid rgba(255,23,68,0.5);
+      color: var(--danger);
+      animation: blink-bar 0.75s step-start infinite;
+    }
+
+    @keyframes blink-bar {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.55; }
+    }
+
+    .history-section { margin-bottom: 28px; }
+
+    .section-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.78rem;
+    }
+
+    th {
+      color: var(--muted);
+      text-align: left;
+      padding: 6px 8px;
+      letter-spacing: 0.1em;
+      font-weight: 400;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 6px 8px;
+      color: var(--text);
+      border-bottom: 1px solid rgba(26,47,74,0.5);
+    }
+
+    tr.sc-row td { color: var(--danger); }
+
+    /* Demo controls */
+    .controls {
+      background: rgba(255,95,31,0.05);
+      border: 1px solid rgba(255,95,31,0.2);
+      border-radius: 4px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+    }
+
+    .controls .section-label { border-color: rgba(255,95,31,0.2); }
+
+    .control-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .control-group label {
+      display: block;
+      font-size: 0.62rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+
+    .control-group input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .control-group .range-val {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--accent);
+    }
+
+    .sc-toggle {
+      margin-top: 12px;
+    }
+
+    .sc-toggle label {
+      font-size: 0.62rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-right: 10px;
+    }
+
+    .btn {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      padding: 6px 14px;
+      cursor: pointer;
+      border-radius: 2px;
+      text-transform: uppercase;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    .btn.danger-btn {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .btn.danger-btn:hover {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    footer {
+      margin-top: 32px;
+      font-size: 0.62rem;
+      letter-spacing: 0.14em;
+      color: var(--border);
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    footer a {
+      color: var(--muted);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Power Monitor</h1>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="demo-badge">Demo Mode</span>
+      <div id="live-indicator">
+        <span id="live-dot"></span>
+        <span id="last-update">Simulating...</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Live metric cards -->
+    <div class="grid">
+      <div class="card">
+        <div class="label">Voltage</div>
+        <div class="value" id="val-v">--</div>
+        <div class="unit">Volts DC</div>
+      </div>
+      <div class="card">
+        <div class="label">Current</div>
+        <div class="value" id="val-i">--</div>
+        <div class="unit">Amperes</div>
+      </div>
+      <div class="card power">
+        <div class="label">Power</div>
+        <div class="value" id="val-p">--</div>
+        <div class="unit">Watts</div>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div id="status-bar" class="normal">
+      <span id="status-icon">[OK]</span>
+      <span id="status-text">System operating normally</span>
+    </div>
+
+    <!-- Demo controls (hidden when connected to real ESP32) -->
+    <div class="controls">
+      <div class="section-label">Demo controls (simulated sensor input)</div>
+      <div class="control-row">
+        <div class="control-group">
+          <label>Voltage &mdash; <span id="lbl-v" class="range-val">12.00 V</span></label>
+          <input type="range" id="ctrl-v" min="0" max="25" step="0.1" value="12">
+        </div>
+        <div class="control-group">
+          <label>Current &mdash; <span id="lbl-i" class="range-val">0.500 A</span></label>
+          <input type="range" id="ctrl-i" min="0" max="8" step="0.01" value="0.5">
+        </div>
+      </div>
+      <div class="sc-toggle" style="display:flex;gap:10px;align-items:center;margin-top:14px;">
+        <button class="btn danger-btn" id="btn-sc">Simulate Short Circuit</button>
+        <button class="btn" id="btn-clear">Clear Alert</button>
+      </div>
+    </div>
+
+    <!-- History table -->
+    <div class="history-section">
+      <div class="section-label">Recent readings (last 10)</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Voltage (V)</th>
+            <th>Current (A)</th>
+            <th>Power (W)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </div>
+
+  </main>
+
+  <footer>
+    ESP32 IoT Power Monitor &mdash; Standalone preview &mdash;
+    Connect to ESP32 IP to see live data &mdash;
+    <a href="https://github.com/your-username/esp32-power-monitor" target="_blank">GitHub</a>
+  </footer>
+
+  <script>
+    /* -----------------------------------------------------------
+     * State
+     * --------------------------------------------------------- */
+    const history      = [];
+    const MAX_HISTORY  = 10;
+    let   forceShort   = false;
+    let   simVoltage   = 12.0;
+    let   simCurrent   = 0.5;
+
+    /* -----------------------------------------------------------
+     * Helpers
+     * --------------------------------------------------------- */
+    function now() {
+      const d   = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    function detectShort(v, i) {
+      if (forceShort)     return true;
+      if (i > 5.0)        return true;
+      if (v < 0.5 && i > 0.1) return true;
+      return false;
+    }
+
+    /* -----------------------------------------------------------
+     * Render
+     * --------------------------------------------------------- */
+    function render(d) {
+      document.getElementById('val-v').textContent = d.voltage.toFixed(2);
+      document.getElementById('val-i').textContent = d.current.toFixed(3);
+      document.getElementById('val-p').textContent = d.power.toFixed(2);
+      document.getElementById('last-update').textContent = 'Updated ' + now();
+
+      const bar  = document.getElementById('status-bar');
+      const icon = document.getElementById('status-icon');
+      const text = document.getElementById('status-text');
+      const dot  = document.getElementById('live-dot');
+
+      if (d.short_circuit) {
+        bar.className    = 'alert';
+        icon.textContent = '[!!]';
+        text.textContent = 'SHORT CIRCUIT DETECTED -- CHECK CONNECTIONS IMMEDIATELY';
+        dot.style.background = 'var(--danger)';
+        dot.style.boxShadow  = '0 0 6px var(--danger)';
+        dot.style.animationName = 'none';
+      } else {
+        bar.className    = 'normal';
+        icon.textContent = '[OK]';
+        text.textContent = 'System operating normally';
+        dot.style.background = 'var(--safe)';
+        dot.style.boxShadow  = '0 0 6px var(--safe)';
+        dot.style.animationName = 'pulse';
+      }
+
+      // History
+      history.unshift({ time: now(), ...d });
+      if (history.length > MAX_HISTORY) history.pop();
+
+      const tbody = document.getElementById('history-body');
+      tbody.innerHTML = '';
+      history.forEach(row => {
+        const tr = document.createElement('tr');
+        if (row.short_circuit) tr.classList.add('sc-row');
+        tr.innerHTML = `
+          <td>${row.time}</td>
+          <td>${row.voltage.toFixed(2)}</td>
+          <td>${row.current.toFixed(3)}</td>
+          <td>${row.power.toFixed(2)}</td>
+          <td>${row.short_circuit ? 'SHORT CIRCUIT' : 'Normal'}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    /* -----------------------------------------------------------
+     * Demo simulation tick
+     * --------------------------------------------------------- */
+    function simTick() {
+      // Add small realistic noise
+      const v  = simVoltage + (Math.random() - 0.5) * 0.08;
+      const i  = simCurrent + (Math.random() - 0.5) * 0.015;
+      const sc = detectShort(v, i);
+
+      render({
+        voltage:       parseFloat(v.toFixed(3)),
+        current:       parseFloat(i.toFixed(4)),
+        power:         parseFloat((v * Math.abs(i)).toFixed(3)),
+        short_circuit: sc
+      });
+    }
+
+    /* -----------------------------------------------------------
+     * Controls
+     * --------------------------------------------------------- */
+    const ctrlV = document.getElementById('ctrl-v');
+    const ctrlI = document.getElementById('ctrl-i');
+
+    ctrlV.addEventListener('input', () => {
+      simVoltage = parseFloat(ctrlV.value);
+      document.getElementById('lbl-v').textContent = simVoltage.toFixed(2) + ' V';
+    });
+
+    ctrlI.addEventListener('input', () => {
+      simCurrent = parseFloat(ctrlI.value);
+      document.getElementById('lbl-i').textContent = simCurrent.toFixed(3) + ' A';
+    });
+
+    document.getElementById('btn-sc').addEventListener('click', () => {
+      forceShort = true;
+    });
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      forceShort = false;
+    });
+
+    /* -----------------------------------------------------------
+     * Start
+     * --------------------------------------------------------- */
+    simTick();
+    setInterval(simTick, 2000);
+  </script>
+
+</body>
+</html>
