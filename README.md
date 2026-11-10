@@ -173,6 +173,16 @@ MIT License. See `LICENSE` for details.
 
 ---
 
+## Skills & technologies
+
+[![C++](https://img.shields.io/badge/C%2B%2B-00599C?logo=cplusplus&logoColor=white)](https://github.com/NirmalyaLenka/ESP32-OTA-Power-Monitor) · [![C](https://img.shields.io/badge/C-00599C?logo=c&logoColor=white)](https://github.com/NirmalyaLenka/ESP32-OTA-Power-Monitor) · [![HTML5](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white)](https://github.com/NirmalyaLenka/ESP32-OTA-Power-Monitor)
+
+
+## How it works
+
+The firmware entry point is `esp32_power_monitor.ino`. Open it in Arduino IDE, select the matching board and serial port, verify pin mappings and required libraries, then compile and upload. Hardware behaviour must be validated on the actual board.
+
+
 ## Maintenance & Audit
 
 - **Audit date:** 10 November 2026
