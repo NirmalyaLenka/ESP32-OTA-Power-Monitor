@@ -97,6 +97,6 @@ Documentation was reviewed against the current root-level sketch, configuration,
 
 ## Maintenance & audit
 
-- **Audit date:** 11 November 2026
+- **Audit date:** 13 November 2026
 - **Scope:** documentation-only review; source, pin assignments, and hardware behavior were not changed.
 - **Verification:** build and hardware/runtime behavior remain unverified.
