@@ -1,192 +1,102 @@
-# ESP32 Power Monitor
+# ESP32 DC Power Monitor
 
-A real-time voltage and current monitoring system built on the ESP32.
-Readings are shown on an SSD1306 OLED display and served as a live web
-dashboard over WiFi. The system automatically detects short circuit conditions.
+An ESP32-based DC voltage/current monitor with an SSD1306 OLED, a Wi-Fi-hosted browser dashboard, and a JSON readings endpoint. The firmware calculates power from the sampled voltage and current and raises a software warning when its configured short-circuit thresholds are met.
 
----
+> **Scope note:** despite the repository name, the current sketch does not implement over-the-air (OTA) firmware updates. Upload firmware through USB/serial. The short-circuit logic is an alert only; it does not disconnect the load and is not a protection device.
 
 ## Features
 
-- Real-time voltage, current, and power measurement
-- SSD1306 OLED display (128x64, I2C)
-- WiFi web dashboard with auto-refresh every 2 seconds
-- JSON API endpoint at `/data` for integration with other systems
-- Short circuit detection (overcurrent and voltage collapse)
-- Reading history table on the dashboard
-- Standalone HTML preview file for UI development without hardware
+- Samples a voltage-divider input and an ACS712 current sensor.
+- Calculates power as voltage × absolute current.
+- Displays readings and warning status on an SSD1306 128×64 I²C OLED.
+- Serves a dashboard at `/` and JSON readings at `/data` over the local Wi-Fi network.
+- Includes a standalone HTML dashboard preview for UI inspection without the ESP32.
 
----
+## Hardware and wiring
 
-## Hardware Required
-
-| Component | Notes |
+| Function | ESP32 connection |
 |---|---|
-| ESP32 Dev Board | Any standard 38-pin or 30-pin module |
-| Voltage sensor module | 25V DC range (resistor divider type) |
-| ACS712 current sensor | 5A, 20A, or 30A variant |
-| SSD1306 OLED | 128x64 pixels, I2C interface |
-| Jumper wires | |
-| Breadboard or PCB | |
+| Voltage sensor output | GPIO 34 (ADC1) |
+| ACS712 output | GPIO 35 (ADC1) |
+| OLED SDA | GPIO 21 |
+| OLED SCL | GPIO 22 |
+| Ground | Common ground, as required by the sensor circuit |
 
----
+The detailed diagram is in [`wiring_diagram.md`](wiring_diagram.md). The sketch expects a voltage-divider module intended for a nominal 25 V DC range, an ACS712 breakout, and an SSD1306 I²C OLED. Confirm the ratings of the exact modules you own before powering them.
 
-## Wiring
+**Electrical safety:** use this as a low-voltage DC learning project only, not for mains/AC measurement. Never allow an ESP32 ADC pin to exceed its permitted input voltage (normally 3.3 V). Some ACS712 breakout boards require 5 V and can produce an output above 3.3 V; verify the board's supply and output range and add suitable signal conditioning if needed. Check the voltage-divider output with a multimeter before connecting it to the ESP32. Do not rely on the software warning to protect a battery, supply, load, or person.
 
-```
-Voltage Sensor OUT  -->  GPIO 34  (ADC1 CH6)
-ACS712 OUT          -->  GPIO 35  (ADC1 CH7)
-OLED SDA            -->  GPIO 21
-OLED SCL            -->  GPIO 22
-All sensor GNDs     -->  GND
-Sensor VCC          -->  3.3V (check your module's rating)
-```
+## Software requirements
 
-> Use only ADC1 pins (GPIO 32-39) for analog reads. ADC2 is unavailable
-> when WiFi is active on the ESP32.
+- Arduino IDE 2.x and the Espressif ESP32 Arduino board package.
+- Libraries: **Adafruit GFX Library**, **Adafruit SSD1306**, **ESPAsyncWebServer**, and **AsyncTCP**.
+- A USB data cable and a Wi-Fi network accessible to the ESP32 and browser.
 
----
+The sketch uses `WiFi.h` from the ESP32 Arduino core. Library versions are not pinned in the repository.
 
-## Software Dependencies
+## Configure, build, and upload
 
-Install these libraries through the Arduino IDE Library Manager:
+1. Inspect the wiring diagram and verify the sensor/module ratings before connecting power.
+2. Open the root-level `config.h` and set `WIFI_SSID` and `WIFI_PASSWORD`. Keep real credentials out of public commits.
+3. Match the calibration constants to your hardware: `VOLTAGE_DIVIDER_RATIO`, `ACS712_SENSITIVITY`, and `ACS712_ZERO_CURRENT_V`. Start with a known, safe low-voltage DC source and compare readings with a multimeter.
+4. Open `esp32_power_monitor.ino` in Arduino IDE. Select **ESP32 Dev Module** (or the exact board), select its serial port, and upload.
+5. Open Serial Monitor at **115200 baud**. If Wi-Fi connects, note the printed IP address and open `http://<ESP32-IP>/` on the same network.
+6. Request `http://<ESP32-IP>/data` to inspect the current JSON response.
 
-- `Adafruit SSD1306` (by Adafruit)
-- `Adafruit GFX Library` (by Adafruit)
-- `ESPAsyncWebServer` (by me-no-dev)
-- `AsyncTCP` (by me-no-dev)
+Do not connect a load until the voltage/current sensor wiring and calibration have been checked independently. The repository's build and hardware behavior have not been verified as part of this documentation pass.
 
-The `WiFi.h` library is bundled with the ESP32 Arduino core.
+## Configuration reference
 
----
+| Setting | Default | Purpose |
+|---|---:|---|
+| `VOLTAGE_PIN` / `CURRENT_PIN` | GPIO 34 / 35 | ADC input pins |
+| `VOLTAGE_DIVIDER_RATIO` | 5.128 | Converts ADC voltage to source voltage |
+| `ACS712_SENSITIVITY` | 0.100 V/A | Must match the ACS712 variant |
+| `ACS712_ZERO_CURRENT_V` | 1.65 V | Zero-current calibration point |
+| `CURRENT_NOISE_FLOOR` | 0.05 A | Suppresses small readings |
+| `MAX_CURRENT` | 5.0 A | Software overcurrent warning threshold |
+| `MIN_VOLTAGE_SC` | 0.5 V | Low-voltage condition used by warning logic |
+| `SAMPLE_INTERVAL_MS` | 500 | Reading interval |
+| `CURRENT_AVG_SAMPLES` | 50 | ADC samples averaged for current |
 
-## Configuration
+The warning condition is evaluated in `sensors.h`. It flags current above `MAX_CURRENT`, or voltage below `MIN_VOLTAGE_SC` while positive current is above 0.1 A. It does **not** turn power off, and reverse-current over-threshold behavior is not covered by the current condition.
 
-Open `src/config.h` and edit the values for your setup before flashing.
+## HTTP interface
 
-```cpp
-// WiFi credentials
-#define WIFI_SSID       "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD   "YOUR_WIFI_PASSWORD"
-
-// ACS712 sensitivity (V/A)
-//   5A  module --> 0.185
-//   20A module --> 0.100
-//   30A module --> 0.066
-#define ACS712_SENSITIVITY  0.100f
-
-// Overcurrent trip level (Amps)
-#define MAX_CURRENT  5.0f
-```
-
-See `config.h` for a full description of every setting.
-
----
-
-## Calibration
-
-### Voltage
-
-1. Apply a known voltage to the input (e.g. measure with a multimeter).
-2. Read the raw value from the Serial monitor.
-3. Adjust `VOLTAGE_DIVIDER_RATIO` in `config.h` until the displayed value matches.
-
-### Current (ACS712 zero-point)
-
-1. Connect the ESP32 and sensor but leave the load disconnected.
-2. Open the Serial monitor and note the ADC voltage on `CURRENT_PIN`.
-3. Set `ACS712_ZERO_CURRENT_V` in `config.h` to that value.
-   On a 3.3 V supply the typical value is around 1.65 V.
-
----
-
-## Flashing
-
-1. Open `src/esp32_power_monitor.ino` in the Arduino IDE.
-2. Select board: `ESP32 Dev Module` (or your specific variant).
-3. Set upload speed to `115200`.
-4. Click Upload.
-5. After boot, the OLED displays the assigned IP address.
-6. Open a browser and navigate to `http://<IP-ADDRESS>`.
-
----
-
-## File Structure
-
-```
-esp32-power-monitor/
-  src/
-    esp32_power_monitor.ino   Main sketch
-    config.h                  All user-configurable constants
-    sensors.h                 Sensor read functions and SensorData struct
-    dashboard.h               Web dashboard HTML stored in PROGMEM
-  dashboard/
-    index.html                Standalone browser preview (no hardware needed)
-  docs/
-    wiring_diagram.md         Detailed wiring notes
-  README.md
-  LICENSE
-  .gitignore
-```
-
----
-
-## API
-
-When the ESP32 is connected to WiFi, the following HTTP endpoints are available:
-
-| Endpoint | Method | Description |
+| Path | Method | Purpose |
 |---|---|---|
-| `/` | GET | Web dashboard (HTML) |
-| `/data` | GET | Live sensor data (JSON) |
+| `/` | GET | Dashboard HTML embedded in `dashboard.h` |
+| `/data` | GET | JSON snapshot: `voltage`, `current`, `power`, and `short_circuit` |
 
-Example `/data` response:
+The standalone `index.html` is a separate browser preview; it is not the firmware-served page and does not itself read sensor hardware.
 
-```json
-{
-  "voltage": 12.043,
-  "current": 0.4820,
-  "power": 5.805,
-  "short_circuit": false
-}
-```
+## Repository map
 
----
+| Path | Role |
+|---|---|
+| `esp32_power_monitor.ino` | Firmware entry point, Wi-Fi setup, HTTP routes, OLED rendering, sampling loop |
+| `config.h` | Pin map, calibration, thresholds, sampling, Wi-Fi credentials |
+| `sensors.h` | Sensor calculations, warning condition, JSON serialization |
+| `dashboard.h` | HTML served from ESP32 flash |
+| `index.html` | Standalone dashboard preview |
+| `wiring_diagram.md` | Wiring and electrical notes |
+| `LICENSE (1)` | License file currently present under this filename |
 
-## Short Circuit Detection
+## Troubleshooting
 
-A short circuit is flagged when either of these conditions is true:
+- **OLED does not start:** check SDA/SCL, ground, power, and I²C address (`0x3C` or `0x3D` in `config.h`).
+- **Wi-Fi does not connect:** verify credentials, 2.4 GHz network compatibility, and Serial Monitor messages.
+- **Readings are offset:** calibrate the divider ratio and ACS712 zero point against a multimeter with a safe, known source.
+- **Current is clipped or implausible:** check the exact ACS712 variant, supply, output range, wiring, and sensitivity constant.
+- **Dashboard is unreachable:** confirm the ESP32 and browser are on the same LAN and use the printed IP address.
+- **False short-circuit warning:** verify sensor calibration and the configured thresholds; the warning is not a validated protection function.
 
-1. Current exceeds `MAX_CURRENT` (default 5.0 A)
-2. Voltage drops below `MIN_VOLTAGE_SC` (default 0.5 V) while current is above 0.1 A
+## Verification status
 
-When triggered, the OLED switches to a full-screen warning and the web
-dashboard status bar blinks red. The condition clears automatically on the
-next reading cycle if normal values are restored.
+Documentation was reviewed against the current root-level sketch, configuration, sensor helpers, dashboard header, and wiring notes. No firmware compilation, calibration, network test, or physical hardware test is claimed.
 
----
-
-## License
-
-MIT License. See `LICENSE` for details.
-
-
----
-
-## Skills & technologies
-
-[![C++](https://img.shields.io/badge/C%2B%2B-00599C?logo=cplusplus&logoColor=white)](https://github.com/NirmalyaLenka/ESP32-OTA-Power-Monitor) · [![C](https://img.shields.io/badge/C-00599C?logo=c&logoColor=white)](https://github.com/NirmalyaLenka/ESP32-OTA-Power-Monitor) · [![HTML5](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white)](https://github.com/NirmalyaLenka/ESP32-OTA-Power-Monitor)
-
-
-## How it works
-
-The firmware entry point is `esp32_power_monitor.ino`. Open it in Arduino IDE, select the matching board and serial port, verify pin mappings and required libraries, then compile and upload. Hardware behaviour must be validated on the actual board.
-
-
-## Maintenance & Audit
+## Maintenance & audit
 
 - **Audit date:** 11 November 2026
-- **Documentation status:** README reviewed and audit record added on this date.
-- **Scope and evidence:** This is a documentation-level maintenance pass. It does not establish that source code compiles, dependencies are current, security has been tested, or hardware/runtime behavior has been verified.
-- **Code and tests:** No new functional code changes or test results are claimed by this README update. Run project-specific build, test, and hardware/runtime checks before relying on the project.
-- **Maintenance baseline:** Documentation status recorded through 11 November 2026; revisit setup instructions, dependencies, known limitations, and tests when the project changes.
+- **Scope:** documentation-only review; source, pin assignments, and hardware behavior were not changed.
+- **Verification:** build and hardware/runtime behavior remain unverified.
