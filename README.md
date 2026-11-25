@@ -100,3 +100,9 @@ Documentation was reviewed against the current root-level sketch, configuration,
 - **Audit date:** 13 November 2026
 - **Scope:** documentation-only review; source, pin assignments, and hardware behavior were not changed.
 - **Verification:** build and hardware/runtime behavior remain unverified.
+
+## Contact
+
+Maintained up to 25 November 2026.
+
+If you encounter any problems, please contact [carmodbhai@gmail.com](mailto:carmodbhai@gmail.com).
